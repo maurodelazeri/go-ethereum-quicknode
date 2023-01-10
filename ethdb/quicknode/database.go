@@ -2,6 +2,7 @@ package quicknode
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -99,19 +100,23 @@ func (db *database) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, e
 }
 
 func (db *database) TruncateHead(n uint64) error {
-	panic("not supported TruncateHead")
+	fmt.Println("TruncateHead but not implemented, returning nil")
+	return nil
 }
 
 func (db *database) TruncateTail(n uint64) error {
-	panic("not supported TruncateTail")
+	fmt.Println("TruncateTail but not implemented, returning nil")
+	return nil
 }
 
 func (db *database) Sync() error {
+	fmt.Println("Sync but not implemented, returning nil")
 	return nil
 }
 
 func (db *database) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
-	panic("not supported MigrateTable")
+	fmt.Println("MigrateTable but not implemented, returning nil")
+	return nil
 }
 
 // NewBatch create a db transaction to batch insert
@@ -231,7 +236,8 @@ func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 }
 
 func (db *database) Stat(property string) (string, error) {
-	panic("not supported Stat")
+	fmt.Println("Stat but not implemented, returning nil", property)
+	return "quicknode", nil
 }
 
 func (db *database) AncientDatadir() (string, error) {
@@ -243,7 +249,8 @@ func (db *database) Compact(start []byte, limit []byte) error {
 }
 
 func (db *database) NewSnapshot() (ethdb.Snapshot, error) {
-	panic("not supported NewSnapshot")
+	fmt.Println("NewSnapshot but not implemented, returning nil")
+	return nil, nil
 }
 
 func (db *database) Close() error {
