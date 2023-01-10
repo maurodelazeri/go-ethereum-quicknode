@@ -2,6 +2,7 @@ package quicknode
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sync/atomic"
@@ -263,6 +264,10 @@ func (db *Database) Close() error {
 
 // putOnDatabase replaces the record if exists, or insert a new one
 func putOnDatabase(db *gorm.DB, tableName string, key []byte, value []byte) (err error) {
+	if db == nil {
+		fmt.Println("SHITTTTTT")
+	}
+
 	processedResult := db.Table(tableName).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value"}),
