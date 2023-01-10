@@ -27,17 +27,19 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/quicknode"
+	"github.com/ethereum/go-ethereum/ethdb/postgres"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/tsdb/fileutil"
 )
 
@@ -687,10 +689,21 @@ func (n *Node) EventMux() *event.TypeMux {
 // previous can be found) from within the node's instance directory. If the node is
 // ephemeral, a memory database is returned.
 func (n *Node) OpenDatabase(name string, cache, handles int, namespace string, readonly bool) (ethdb.Database, error) {
-
 	{
-		db, err := quicknode.NewDatabase()
-		return db, err
+		connectStr := "host=127.0.0.1 port=5432 user=postgres password=tothemoon342d9dS dbname=eth sslmode=disable"
+		db, err := sqlx.Connect("postgres", connectStr)
+		if err != nil {
+			panic("problem to connect to postgres:" + err.Error())
+		}
+
+		cacheConfig := postgres.CacheConfig{
+			Name:           name,
+			Size:           3000000, // 3MB
+			ExpiryDuration: time.Hour,
+		}
+		database := postgres.NewDatabase(db, cacheConfig)
+
+		return database, err
 	}
 
 	n.lock.Lock()
