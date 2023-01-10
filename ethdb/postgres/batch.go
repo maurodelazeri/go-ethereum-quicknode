@@ -42,11 +42,7 @@ func (b *Batch) Put(key []byte, value []byte) (err error) {
 // Delete satisfies the ethdb.Batch interface
 // Delete removes the key from the key-value data store
 func (b *Batch) Delete(key []byte) (err error) {
-	mhKey, err := MultihashKeyFromKeccak256(key)
-	if err != nil {
-		return err
-	}
-	_, err = b.tx.Exec(deletePgStr, mhKey)
+	_, err = b.tx.Exec(deletePgStr, key)
 	return err
 }
 

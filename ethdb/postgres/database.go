@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"strconv"
@@ -44,7 +43,7 @@ type CacheConfig struct {
 // NewKeyValueStore returns a ethdb.KeyValueStore interface for PG-IPFS
 func NewKeyValueStore(db *sqlx.DB, cacheConfig CacheConfig) ethdb.KeyValueStore {
 	database := Database{db: db}
-	database.InitCache(cacheConfig)
+	// database.InitCache(cacheConfig)
 
 	return &database
 }
@@ -52,29 +51,29 @@ func NewKeyValueStore(db *sqlx.DB, cacheConfig CacheConfig) ethdb.KeyValueStore 
 // NewDatabase returns a ethdb.Database interface for PG-IPFS
 func NewDatabase(db *sqlx.DB, cacheConfig CacheConfig) ethdb.Database {
 	database := Database{db: db}
-	database.InitCache(cacheConfig)
+	// database.InitCache(cacheConfig)
 
 	return &database
 }
 
-func (d *Database) InitCache(cacheConfig CacheConfig) {
-	d.cache = groupcache.NewGroup(cacheConfig.Name, int64(cacheConfig.Size), groupcache.GetterFunc(
-		func(_ context.Context, id string, dest groupcache.Sink) error {
-			val, err := d.dbGet(id)
+// func (d *Database) InitCache(cacheConfig CacheConfig) {
+// 	d.cache = groupcache.NewGroup(cacheConfig.Name, int64(cacheConfig.Size), groupcache.GetterFunc(
+// 		func(_ context.Context, id string, dest groupcache.Sink) error {
+// 			val, err := d.dbGet(id)
 
-			if err != nil {
-				return err
-			}
+// 			if err != nil {
+// 				return err
+// 			}
 
-			// Set the value in the groupcache, with expiry
-			if err := dest.SetBytes(val, time.Now().Add(cacheConfig.ExpiryDuration)); err != nil {
-				return err
-			}
+// 			// Set the value in the groupcache, with expiry
+// 			if err := dest.SetBytes(val, time.Now().Add(cacheConfig.ExpiryDuration)); err != nil {
+// 				return err
+// 			}
 
-			return nil
-		},
-	))
-}
+// 			return nil
+// 		},
+// 	))
+// }
 
 func (d *Database) GetCacheStats() groupcache.Stats {
 	return d.cache.Stats
@@ -83,16 +82,12 @@ func (d *Database) GetCacheStats() groupcache.Stats {
 // Has satisfies the ethdb.KeyValueReader interface
 // Has retrieves if a key is present in the key-value data store
 func (d *Database) Has(key []byte) (bool, error) {
-	mhKey, err := MultihashKeyFromKeccak256(key)
-	if err != nil {
-		return false, err
-	}
 	var exists bool
-	return exists, d.db.Get(&exists, hasPgStr, mhKey)
+	return exists, d.db.Get(&exists, hasPgStr, key)
 }
 
 // Get retrieves the given key if it's present in the key-value data store
-func (d *Database) dbGet(key string) ([]byte, error) {
+func (d *Database) Get(key []byte) ([]byte, error) {
 	var data []byte
 	err := d.db.Get(&data, getPgStr, key)
 	if err == sql.ErrNoRows {
@@ -104,48 +99,39 @@ func (d *Database) dbGet(key string) ([]byte, error) {
 
 // Get satisfies the ethdb.KeyValueReader interface
 // Get retrieves the given key if it's present in the key-value data store
-func (d *Database) Get(key []byte) ([]byte, error) {
-	mhKey, err := MultihashKeyFromKeccak256(key)
-	if err != nil {
-		return nil, err
-	}
+// func (d *Database) CACHEGet(key []byte) ([]byte, error) {
+// 	mhKey, err := MultihashKeyFromKeccak256(key)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+// 	defer cancel()
 
-	var data []byte
-	return data, d.cache.Get(ctx, mhKey, groupcache.AllocatingByteSliceSink(&data))
-}
+// 	var data []byte
+// 	return data, d.cache.Get(ctx, mhKey, groupcache.AllocatingByteSliceSink(&data))
+// }
 
 // Put satisfies the ethdb.KeyValueWriter interface
 // Put inserts the given value into the key-value data store
 // Key is expected to be the keccak256 hash of value
 func (d *Database) Put(key []byte, value []byte) error {
-	mhKey, err := MultihashKeyFromKeccak256(key)
-	if err != nil {
-		return err
-	}
-	_, err = d.db.Exec(putPgStr, mhKey, value)
+	_, err := d.db.Exec(putPgStr, key, value)
 	return err
 }
 
 // Delete satisfies the ethdb.KeyValueWriter interface
 // Delete removes the key from the key-value data store
 func (d *Database) Delete(key []byte) error {
-	mhKey, err := MultihashKeyFromKeccak256(key)
-	if err != nil {
-		return err
-	}
-
-	_, err = d.db.Exec(deletePgStr, mhKey)
+	_, err := d.db.Exec(deletePgStr, key)
 	if err != nil {
 		return err
 	}
 
 	// Remove from cache.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
-	defer cancel()
-	err = d.cache.Remove(ctx, mhKey)
+	// ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+	// defer cancel()
+	// err = d.cache.Remove(ctx, mhKey)
 
 	return err
 }
