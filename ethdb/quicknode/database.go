@@ -2,10 +2,8 @@ package quicknode
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -15,12 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-var (
-	ethDB         *gorm.DB
-	instanceCount int32
-)
-
-type Database struct {
+type database struct {
 	db *gorm.DB
 }
 
@@ -33,7 +26,7 @@ type iterator struct {
 	values [][]byte
 }
 
-func (db *Database) Has(key []byte) (bool, error) {
+func (db *database) Has(key []byte) (bool, error) {
 	// Check if returns RecordNotFound error
 	if err := db.db.Where(&EvmData{Key: key}).First(&EvmData{}).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -43,7 +36,7 @@ func (db *Database) Has(key []byte) (bool, error) {
 	return true, nil
 }
 
-func (db *Database) Get(key []byte) ([]byte, error) {
+func (db *database) Get(key []byte) ([]byte, error) {
 	out := &EvmData{}
 	err := db.db.Where(&EvmData{
 		Key: key,
@@ -54,43 +47,43 @@ func (db *Database) Get(key []byte) ([]byte, error) {
 	return out.Value, nil
 }
 
-func (db *Database) HasAncient(kind string, number uint64) (bool, error) {
+func (db *database) HasAncient(kind string, number uint64) (bool, error) {
 	if _, err := db.Ancient(kind, number); err != nil {
 		return false, nil
 	}
 	return true, nil
 }
 
-func (db *Database) Ancient(kind string, number uint64) ([]byte, error) {
+func (db *database) Ancient(kind string, number uint64) ([]byte, error) {
 	return nil, nil
 }
 
-func (db *Database) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
+func (db *database) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
 	panic("not supported AncientRange")
 }
 
-func (db *Database) Ancients() (uint64, error) {
+func (db *database) Ancients() (uint64, error) {
 	return 0, nil
 }
 
-func (db *Database) Tail() (uint64, error) {
+func (db *database) Tail() (uint64, error) {
 	return 0, nil
 }
 
-func (db *Database) AncientSize(kind string) (uint64, error) {
+func (db *database) AncientSize(kind string) (uint64, error) {
 	return 0, nil
 }
 
-func (db *Database) ReadAncients(fn func(op ethdb.AncientReaderOp) error) (err error) {
+func (db *database) ReadAncients(fn func(op ethdb.AncientReaderOp) error) (err error) {
 	return fn(db)
 }
 
-func (db *Database) Put(key []byte, value []byte) error {
+func (db *database) Put(key []byte, value []byte) error {
 	err := putOnDatabase(db.db, "evm_data", key, value)
 	return err
 }
 
-func (db *Database) Delete(key []byte) error {
+func (db *database) Delete(key []byte) error {
 	err := db.db.Where(&EvmData{
 		Key: key,
 	}).Delete(&EvmData{}).Error
@@ -101,36 +94,36 @@ func (db *Database) Delete(key []byte) error {
 	return err
 }
 
-func (db *Database) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
+func (db *database) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
 	return 0, nil
 }
 
-func (db *Database) TruncateHead(n uint64) error {
+func (db *database) TruncateHead(n uint64) error {
 	panic("not supported TruncateHead")
 }
 
-func (db *Database) TruncateTail(n uint64) error {
+func (db *database) TruncateTail(n uint64) error {
 	panic("not supported TruncateTail")
 }
 
-func (db *Database) Sync() error {
+func (db *database) Sync() error {
 	return nil
 }
 
-func (db *Database) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
+func (db *database) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
 	panic("not supported MigrateTable")
 }
 
 // NewBatch create a db transaction to batch insert
-func (db *Database) NewBatch() ethdb.Batch {
+func (db *database) NewBatch() ethdb.Batch {
 	return &batch{
-		Database:    db,
+		database:    db,
 		transaction: db.db.Begin(),
 	}
 }
 
 type batch struct {
-	*Database
+	*database
 	transaction *gorm.DB
 	size        int
 	finished    bool
@@ -177,9 +170,10 @@ func (b *batch) Replay(w ethdb.KeyValueWriter) error {
 	return nil
 }
 
-func (db *Database) NewBatchWithSize(size int) ethdb.Batch {
+func (db *database) NewBatchWithSize(size int) ethdb.Batch {
 	return &batch{
-		Database: db,
+		database:    db,
+		transaction: db.db.Begin(),
 	}
 }
 
@@ -228,7 +222,7 @@ func (it *iterator) Release() {
 	it.index, it.keys, it.values = -1, nil, nil
 }
 
-func (db *Database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	return &iterator{
 		index:  -1,
 		keys:   []string{},
@@ -236,38 +230,28 @@ func (db *Database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	}
 }
 
-func (db *Database) Stat(property string) (string, error) {
+func (db *database) Stat(property string) (string, error) {
 	panic("not supported Stat")
 }
 
-func (db *Database) AncientDatadir() (string, error) {
+func (db *database) AncientDatadir() (string, error) {
 	panic("not supported AncientDatadir")
 }
 
-func (db *Database) Compact(start []byte, limit []byte) error {
+func (db *database) Compact(start []byte, limit []byte) error {
 	return nil
 }
 
-func (db *Database) NewSnapshot() (ethdb.Snapshot, error) {
+func (db *database) NewSnapshot() (ethdb.Snapshot, error) {
 	panic("not supported NewSnapshot")
 }
 
-func (db *Database) Close() error {
-	if atomic.CompareAndSwapInt32(&instanceCount, 1, 0) {
-		ethDB = nil
-	} else {
-		atomic.AddInt32(&instanceCount, -1)
-	}
-
+func (db *database) Close() error {
 	return nil
 }
 
 // putOnDatabase replaces the record if exists, or insert a new one
 func putOnDatabase(db *gorm.DB, tableName string, key []byte, value []byte) (err error) {
-	if db == nil {
-		fmt.Println("SHITTTTTT")
-	}
-
 	processedResult := db.Table(tableName).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value"}),
@@ -280,42 +264,36 @@ func putOnDatabase(db *gorm.DB, tableName string, key []byte, value []byte) (err
 
 // NewDatabase returns a MySQL wrapped object.
 func NewDatabase() (ethdb.Database, error) {
+	// Open db
+	// Logger
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
+		logger.Config{
+			SlowThreshold:             time.Second,   // Slow SQL threshold
+			LogLevel:                  logger.Silent, // Log level
+			IgnoreRecordNotFoundError: true,          // Ignore ErrRecordNotFound error for logger
+			Colorful:                  true,          // Disable color
+		},
+	)
 
-	if atomic.CompareAndSwapInt32(&instanceCount, 0, 1) {
-		// Open db
-		// Logger
-		newLogger := logger.New(
-			log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
-			logger.Config{
-				SlowThreshold:             time.Second,   // Slow SQL threshold
-				LogLevel:                  logger.Silent, // Log level
-				IgnoreRecordNotFoundError: true,          // Ignore ErrRecordNotFound error for logger
-				Colorful:                  true,          // Disable color
-			},
-		)
-
-		// Connects to PostgresDB
-		db, err := gorm.Open(
-			postgres.Open("host=127.0.0.1 port=5432 user=postgres password=tothemoon342d9dS dbname=eth sslmode=disable"), &gorm.Config{
-				Logger: newLogger,
-			},
-		)
-		if err != nil {
-			panic(err)
-		}
-
-		// Migration
-		err = db.AutoMigrate(&EvmData{})
-
-		if err != nil {
-			panic(err)
-		}
-		ethDB = db
-	} else {
-		atomic.AddInt32(&instanceCount, 1)
+	// Connects to PostgresDB
+	db, err := gorm.Open(
+		postgres.Open("host=127.0.0.1 port=5432 user=postgres password=tothemoon342d9dS dbname=eth sslmode=disable"), &gorm.Config{
+			Logger: newLogger,
+		},
+	)
+	if err != nil {
+		panic(err)
 	}
 
-	return &Database{
-		db: ethDB,
+	// Migration
+	err = db.AutoMigrate(&EvmData{})
+
+	if err != nil {
+		panic(err)
+	}
+
+	return &database{
+		db: db,
 	}, nil
 }
