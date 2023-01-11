@@ -1,77 +1,30 @@
 package scylladb
 
 import (
-	"errors"
-	"sort"
-	"strings"
+	"fmt"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/gocql/gocql"
 )
 
-var (
-// errMemorydbClosed is returned if a memory database was already closed at the
-// invocation of a data access operation.
-// errMemorydbClosed = errors.New("database closed")
-
-// errMemorydbNotFound is returned if a key is requested that is not found in
-// the provided memory database.
-// errMemorydbNotFound = errors.New("not found")
-
-// errSnapshotReleased is returned if callers want to retrieve data from a
-// released snapshot.
-// errSnapshotReleased = errors.New("snapshot released")
-)
-
-// Database is an ephemeral key-value store. Apart from basic data storage
-// functionality it also supports batch writes and iterating over the keyspace in
-// binary-alphabetical order.
-type Database struct {
-	db      map[string][]byte
+type database struct {
 	session *gocql.Session
 	lock    sync.RWMutex
 }
 
-// NewDatabase returns a MySQL wrapped object.
-func NewDatabase() (ethdb.Database, error) {
-	cluster := gocql.NewCluster("127.0.0.1")
-	cluster.Keyspace = "eth"
-	cluster.Consistency = gocql.Any
-	session, _ := cluster.CreateSession()
-
-	return &Database{
-		session: session,
-		db:      make(map[string][]byte),
-	}, nil
+// NewIterator satisfies the ethdb.Iteratee interface
+// it creates a binary-alphabetical iterator over a subset
+// of database content with a particular key prefix, starting at a particular
+// initial key (or after, if it does not exist).
+//
+// Note: This method assumes that the prefix is NOT part of the start, so there's
+// no need for the caller to prepend the prefix to the start
+func (d *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+	return NewIterator(start, prefix, d.session)
 }
 
-// NewWithCap returns a wrapped map pre-allocated to the provided capacity with
-// all the required database interface methods implemented.
-func NewWithCap(size int) *Database {
-	cluster := gocql.NewCluster("127.0.0.1")
-	cluster.Keyspace = "eth"
-	cluster.Consistency = gocql.Any
-	session, _ := cluster.CreateSession()
-
-	return &Database{
-		session: session,
-		db:      make(map[string][]byte, size),
-	}
-}
-
-// Close deallocates the internal map and ensures any consecutive data access op
-// fails with an error.
-func (db *Database) Close() error {
-	return nil
-}
-
-// Has retrieves if a key is present in the key-value store.
-func (db *Database) Has(key []byte) (bool, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
+func (db *database) Has(key []byte) (bool, error) {
 	var value []byte
 	if err := db.session.Query(`SELECT value FROM blockchain WHERE key = ?`, key).Consistency(gocql.One).Scan(&value); err != nil {
 		return false, err
@@ -82,11 +35,7 @@ func (db *Database) Has(key []byte) (bool, error) {
 	return false, nil
 }
 
-// Get retrieves the given key if it's present in the key-value store.
-func (db *Database) Get(key []byte) ([]byte, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
+func (db *database) Get(key []byte) ([]byte, error) {
 	var value []byte
 	if err := db.session.Query(`SELECT value FROM blockchain WHERE key = ?`, key).Consistency(gocql.One).Scan(&value); err != nil {
 		return nil, err
@@ -97,259 +46,120 @@ func (db *Database) Get(key []byte) ([]byte, error) {
 	return nil, nil
 }
 
-// Put inserts the given value into the key-value store.
-func (db *Database) Put(key []byte, value []byte) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+func (db *database) HasAncient(kind string, number uint64) (bool, error) {
+	if _, err := db.Ancient(kind, number); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
 
+func (db *database) Ancient(kind string, number uint64) ([]byte, error) {
+	return nil, nil
+}
+
+func (db *database) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
+	panic("not supported AncientRange")
+}
+
+func (db *database) Ancients() (uint64, error) {
+	return 0, nil
+}
+
+func (db *database) Tail() (uint64, error) {
+	return 0, nil
+}
+
+func (db *database) AncientSize(kind string) (uint64, error) {
+	return 0, nil
+}
+
+func (db *database) ReadAncients(fn func(op ethdb.AncientReaderOp) error) (err error) {
+	return fn(db)
+}
+
+func (db *database) Put(key []byte, value []byte) error {
 	if err := db.session.Query(`INSERT INTO blockchain (key,value) VALUES (?, ?)`, key, value).Exec(); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Delete removes the key from the key-value store.
-func (db *Database) Delete(key []byte) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
+func (db *database) Delete(key []byte) error {
 	if err := db.session.Query(`DELETE from FROM blockchain WHERE key = ?`, key).Exec(); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (db *database) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
+	return 0, nil
+}
+
+func (db *database) TruncateHead(n uint64) error {
+	fmt.Println("TruncateHead but not implemented, returning nil")
+	return nil
+}
+
+func (db *database) TruncateTail(n uint64) error {
+	fmt.Println("TruncateTail but not implemented, returning nil")
+	return nil
+}
+
+func (db *database) Sync() error {
+	fmt.Println("Sync but not implemented, returning nil")
+	return nil
+}
+
+func (db *database) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
+	fmt.Println("MigrateTable but not implemented, returning nil")
+	return nil
+}
+
 // NewBatch creates a write-only key-value store that buffers changes to its host
 // database until a final write is called.
-func (db *Database) NewBatch() ethdb.Batch {
+func (db *database) NewBatch() ethdb.Batch {
 	return &batch{
 		db: db,
 	}
 }
 
 // NewBatchWithSize creates a write-only database batch with pre-allocated buffer.
-func (db *Database) NewBatchWithSize(size int) ethdb.Batch {
+func (db *database) NewBatchWithSize(size int) ethdb.Batch {
 	return &batch{
 		db: db,
 	}
 }
 
-// NewIterator creates a binary-alphabetical iterator over a subset
-// of database content with a particular key prefix, starting at a particular
-// initial key (or after, if it does not exist).
-func (db *Database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
-
-	var (
-		pr     = string(prefix)
-		st     = string(append(prefix, start...))
-		keys   = make([]string, 0, len(db.db))
-		values = make([][]byte, 0, len(db.db))
-	)
-	// Collect the keys from the memory database corresponding to the given prefix
-	// and start
-	for key := range db.db {
-		if !strings.HasPrefix(key, pr) {
-			continue
-		}
-		if key >= st {
-			keys = append(keys, key)
-		}
-	}
-	// Sort the items and retrieve the associated values
-	sort.Strings(keys)
-	for _, key := range keys {
-		values = append(values, db.db[key])
-	}
-	return &iterator{
-		index:  -1,
-		keys:   keys,
-		values: values,
-	}
+func (db *database) Stat(property string) (string, error) {
+	fmt.Println("Stat but not implemented, returning nil", property)
+	return "quicknode", nil
 }
 
-// NewSnapshot creates a database snapshot based on the current state.
-// The created snapshot will not be affected by all following mutations
-// happened on the database.
-func (db *Database) NewSnapshot() (ethdb.Snapshot, error) {
-	return newSnapshot(db), nil
+func (db *database) AncientDatadir() (string, error) {
+	panic("not supported AncientDatadir")
 }
 
-// Stat returns a particular internal stat of the database.
-func (db *Database) Stat(property string) (string, error) {
-	return "", errors.New("unknown property")
-}
-
-// Compact is not supported on a memory database, but there's no need either as
-// a memory database doesn't waste space anyway.
-func (db *Database) Compact(start []byte, limit []byte) error {
+func (db *database) Compact(start []byte, limit []byte) error {
 	return nil
 }
 
-// Len returns the number of entries currently present in the memory database.
-//
-// Note, this method is only used for testing (i.e. not public in general) and
-// does not have explicit checks for closed-ness to allow simpler testing code.
-func (db *Database) Len() int {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
-
-	return len(db.db)
-}
-
-// keyvalue is a key-value tuple tagged with a deletion field to allow creating
-// memory-database write batches.
-type keyvalue struct {
-	key    []byte
-	value  []byte
-	delete bool
-}
-
-// batch is a write-only memory batch that commits changes to its host
-// database when Write is called. A batch cannot be used concurrently.
-type batch struct {
-	db     *Database
-	writes []keyvalue
-	size   int
-}
-
-// Put inserts the given value into the batch for later committing.
-func (b *batch) Put(key, value []byte) error {
-	b.writes = append(b.writes, keyvalue{common.CopyBytes(key), common.CopyBytes(value), false})
-	b.size += len(key) + len(value)
-	return nil
-}
-
-// Delete inserts the a key removal into the batch for later committing.
-func (b *batch) Delete(key []byte) error {
-	b.writes = append(b.writes, keyvalue{common.CopyBytes(key), nil, true})
-	b.size += len(key)
-	return nil
-}
-
-// ValueSize retrieves the amount of data queued up for writing.
-func (b *batch) ValueSize() int {
-	return b.size
-}
-
-// Write flushes any accumulated data to the memory database.
-func (b *batch) Write() error {
-	b.db.lock.Lock()
-	defer b.db.lock.Unlock()
-
-	for _, keyvalue := range b.writes {
-		if keyvalue.delete {
-			delete(b.db.db, string(keyvalue.key))
-			continue
-		}
-		b.db.db[string(keyvalue.key)] = keyvalue.value
-	}
-	return nil
-}
-
-// Reset resets the batch for reuse.
-func (b *batch) Reset() {
-	b.writes = b.writes[:0]
-	b.size = 0
-}
-
-// Replay replays the batch contents.
-func (b *batch) Replay(w ethdb.KeyValueWriter) error {
-	// for _, keyvalue := range b.writes {
-	// 	if keyvalue.delete {
-	// 		if err := w.Delete(keyvalue.key); err != nil {
-	// 			return err
-	// 		}
-	// 		continue
-	// 	}
-	// 	if err := w.Put(keyvalue.key, keyvalue.value); err != nil {
-	// 		return err
-	// 	}
-	// }
-	return nil
-}
-
-// iterator can walk over the (potentially partial) keyspace of a memory key
-// value store. Internally it is a deep copy of the entire iterated state,
-// sorted by keys.
-type iterator struct {
-	index  int
-	keys   []string
-	values [][]byte
-}
-
-// Next moves the iterator to the next key/value pair. It returns whether the
-// iterator is exhausted.
-func (it *iterator) Next() bool {
-	// Short circuit if iterator is already exhausted in the forward direction.
-	if it.index >= len(it.keys) {
-		return false
-	}
-	it.index += 1
-	return it.index < len(it.keys)
-}
-
-// Error returns any accumulated error. Exhausting all the key/value pairs
-// is not considered to be an error. A memory iterator cannot encounter errors.
-func (it *iterator) Error() error {
-	return nil
-}
-
-// Key returns the key of the current key/value pair, or nil if done. The caller
-// should not modify the contents of the returned slice, and its contents may
-// change on the next call to Next.
-func (it *iterator) Key() []byte {
-	// Short circuit if iterator is not in a valid position
-	if it.index < 0 || it.index >= len(it.keys) {
-		return nil
-	}
-	return []byte(it.keys[it.index])
-}
-
-// Value returns the value of the current key/value pair, or nil if done. The
-// caller should not modify the contents of the returned slice, and its contents
-// may change on the next call to Next.
-func (it *iterator) Value() []byte {
-	// Short circuit if iterator is not in a valid position
-	if it.index < 0 || it.index >= len(it.keys) {
-		return nil
-	}
-	return it.values[it.index]
-}
-
-// Release releases associated resources. Release should always succeed and can
-// be called multiple times without causing error.
-func (it *iterator) Release() {
-	it.index, it.keys, it.values = -1, nil, nil
-}
-
-// snapshot wraps a batch of key-value entries deep copied from the in-memory
-// database for implementing the Snapshot interface.
-type snapshot struct {
-	db map[string][]byte
-}
-
-// newSnapshot initializes the snapshot with the given database instance.
-func newSnapshot(db *Database) *snapshot {
-	copied := make(map[string][]byte)
-	return &snapshot{db: copied}
-}
-
-// Has retrieves if a key is present in the snapshot backing by a key-value
-// data store.
-func (snap *snapshot) Has(key []byte) (bool, error) {
-	return false, nil
-}
-
-// Get retrieves the given key if it's present in the snapshot backing by
-// key-value data store.
-func (snap *snapshot) Get(key []byte) ([]byte, error) {
+func (db *database) NewSnapshot() (ethdb.Snapshot, error) {
+	fmt.Println("NewSnapshot but not implemented, returning nil")
 	return nil, nil
 }
 
-// Release releases associated resources. Release should always succeed and can
-// be called multiple times without causing error.
-func (snap *snapshot) Release() {
+func (db *database) Close() error {
+	return nil
+}
 
+// NewDatabase returns a MySQL wrapped object.
+func NewDatabase() (ethdb.Database, error) {
+	cluster := gocql.NewCluster("127.0.0.1")
+	cluster.Keyspace = "eth"
+	cluster.Consistency = gocql.Any
+	session, _ := cluster.CreateSession()
+
+	return &database{
+		session: session,
+	}, nil
 }
