@@ -22,7 +22,6 @@ type Iterator struct {
 
 // NewIterator returns an ethdb.Iterator interface
 func NewIterator(start, prefix []byte, session *gocql.Session) ethdb.Iterator {
-	fmt.Println("start", string(start), "prefix", string(prefix))
 
 	return &Iterator{
 		session:    session,
@@ -58,6 +57,18 @@ func (i *Iterator) Key() []byte {
 // The caller should not modify the contents of the returned slice
 // and its contents may change on the next call to Next
 func (i *Iterator) Value() []byte {
+	var value []byte
+
+	if i.session == nil {
+		fmt.Println("SHIT GET IS NIL")
+	}
+
+	if err := i.session.Query(`SELECT value FROM blockchain WHERE key = ?`, i.currentKey).Consistency(gocql.One).Scan(&value); err != nil {
+		return nil
+	}
+	if len(value) > 0 {
+		return value
+	}
 	return nil
 }
 
