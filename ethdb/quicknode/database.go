@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -15,16 +16,19 @@ import (
 )
 
 type database struct {
-	db *gorm.DB
+	db   *gorm.DB
+	lock sync.RWMutex
 }
 
-// iterator can walk over the (potentially partial) keyspace of a memory key
-// value store. Internally it is a deep copy of the entire iterated state,
-// sorted by keys.
-type iterator struct {
-	index  int
-	keys   []string
-	values [][]byte
+// NewIterator satisfies the ethdb.Iteratee interface
+// it creates a binary-alphabetical iterator over a subset
+// of database content with a particular key prefix, starting at a particular
+// initial key (or after, if it does not exist).
+//
+// Note: This method assumes that the prefix is NOT part of the start, so there's
+// no need for the caller to prepend the prefix to the start
+func (d *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+	return NewIterator(start, prefix, d.db)
 }
 
 func (db *database) Has(key []byte) (bool, error) {
@@ -180,70 +184,6 @@ func (db *database) NewBatchWithSize(size int) ethdb.Batch {
 	return &batch{
 		database:    db,
 		transaction: db.db.Begin(),
-	}
-}
-
-// Next moves the iterator to the next key/value pair. It returns whether the
-// iterator is exhausted.
-func (it *iterator) Next() bool {
-	fmt.Println("iterator Next")
-
-	// Short circuit if iterator is already exhausted in the forward direction.
-	if it.index >= len(it.keys) {
-		return false
-	}
-	it.index += 1
-	return it.index < len(it.keys)
-}
-
-// Error returns any accumulated error. Exhausting all the key/value pairs
-// is not considered to be an error. A memory iterator cannot encounter errors.
-func (it *iterator) Error() error {
-	fmt.Println("iterator Error")
-
-	return nil
-}
-
-// Key returns the key of the current key/value pair, or nil if done. The caller
-// should not modify the contents of the returned slice, and its contents may
-// change on the next call to Next.
-func (it *iterator) Key() []byte {
-	fmt.Println("iterator Key")
-
-	// Short circuit if iterator is not in a valid position
-	if it.index < 0 || it.index >= len(it.keys) {
-		return nil
-	}
-	return []byte(it.keys[it.index])
-}
-
-// Value returns the value of the current key/value pair, or nil if done. The
-// caller should not modify the contents of the returned slice, and its contents
-// may change on the next call to Next.
-func (it *iterator) Value() []byte {
-	fmt.Println("iterator Value")
-
-	// Short circuit if iterator is not in a valid position
-	if it.index < 0 || it.index >= len(it.keys) {
-		return nil
-	}
-	return it.values[it.index]
-}
-
-// Release releases associated resources. Release should always succeed and can
-// be called multiple times without causing error.
-func (it *iterator) Release() {
-	fmt.Println("iterator Release")
-
-	it.index, it.keys, it.values = -1, nil, nil
-}
-
-func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
-	fmt.Println("iterator NewIterator")
-	return &iterator{
-		index:  -1,
-		keys:   []string{},
-		values: [][]byte{},
 	}
 }
 

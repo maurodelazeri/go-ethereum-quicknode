@@ -1,105 +1,100 @@
-// Copyright 2018 The go-ethereum Authors
-// This file is part of the go-ethereum library.
-//
-// The go-ethereum library is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// The go-ethereum library is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
-
-// Package memorydb implements the key-value database layer based on memory maps.
-package memorydb
+package scylladb
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/gocql/gocql"
 )
 
 var (
-	// errMemorydbClosed is returned if a memory database was already closed at the
-	// invocation of a data access operation.
-	errMemorydbClosed = errors.New("database closed")
+// errMemorydbClosed is returned if a memory database was already closed at the
+// invocation of a data access operation.
+// errMemorydbClosed = errors.New("database closed")
 
-	// errMemorydbNotFound is returned if a key is requested that is not found in
-	// the provided memory database.
-	errMemorydbNotFound = errors.New("not found")
+// errMemorydbNotFound is returned if a key is requested that is not found in
+// the provided memory database.
+// errMemorydbNotFound = errors.New("not found")
 
-	// errSnapshotReleased is returned if callers want to retrieve data from a
-	// released snapshot.
-	errSnapshotReleased = errors.New("snapshot released")
+// errSnapshotReleased is returned if callers want to retrieve data from a
+// released snapshot.
+// errSnapshotReleased = errors.New("snapshot released")
 )
 
 // Database is an ephemeral key-value store. Apart from basic data storage
 // functionality it also supports batch writes and iterating over the keyspace in
 // binary-alphabetical order.
 type Database struct {
-	db   map[string][]byte
-	lock sync.RWMutex
+	db      map[string][]byte
+	session *gocql.Session
+	lock    sync.RWMutex
 }
 
-// New returns a wrapped map with all the required database interface methods
-// implemented.
-func New() *Database {
+// NewDatabase returns a MySQL wrapped object.
+func NewDatabase() (ethdb.Database, error) {
+	cluster := gocql.NewCluster("127.0.0.1")
+	cluster.Keyspace = "eth"
+	cluster.Consistency = gocql.Any
+	session, _ := cluster.CreateSession()
+
 	return &Database{
-		db: make(map[string][]byte),
-	}
+		session: session,
+		db:      make(map[string][]byte),
+	}, nil
 }
 
 // NewWithCap returns a wrapped map pre-allocated to the provided capacity with
 // all the required database interface methods implemented.
 func NewWithCap(size int) *Database {
+	cluster := gocql.NewCluster("127.0.0.1")
+	cluster.Keyspace = "eth"
+	cluster.Consistency = gocql.Any
+	session, _ := cluster.CreateSession()
+
 	return &Database{
-		db: make(map[string][]byte, size),
+		session: session,
+		db:      make(map[string][]byte, size),
 	}
 }
 
 // Close deallocates the internal map and ensures any consecutive data access op
 // fails with an error.
 func (db *Database) Close() error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
-	db.db = nil
 	return nil
 }
 
 // Has retrieves if a key is present in the key-value store.
 func (db *Database) Has(key []byte) (bool, error) {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
+	db.lock.Lock()
+	defer db.lock.Unlock()
 
-	if db.db == nil {
-		return false, errMemorydbClosed
+	var value []byte
+	if err := db.session.Query(`SELECT value FROM blockchain WHERE key = ?`, key).Consistency(gocql.One).Scan(&value); err != nil {
+		return false, err
 	}
-	_, ok := db.db[string(key)]
-	return ok, nil
+	if len(value) > 0 {
+		return true, nil
+	}
+	return false, nil
 }
 
 // Get retrieves the given key if it's present in the key-value store.
 func (db *Database) Get(key []byte) ([]byte, error) {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
+	db.lock.Lock()
+	defer db.lock.Unlock()
 
-	if db.db == nil {
-		return nil, errMemorydbClosed
+	var value []byte
+	if err := db.session.Query(`SELECT value FROM blockchain WHERE key = ?`, key).Consistency(gocql.One).Scan(&value); err != nil {
+		return nil, err
 	}
-	if entry, ok := db.db[string(key)]; ok {
-		return common.CopyBytes(entry), nil
+	if len(value) > 0 {
+		return value, nil
 	}
-	return nil, errMemorydbNotFound
+	return nil, nil
 }
 
 // Put inserts the given value into the key-value store.
@@ -107,10 +102,9 @@ func (db *Database) Put(key []byte, value []byte) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
-	if db.db == nil {
-		return errMemorydbClosed
+	if err := db.session.Query(`INSERT INTO blockchain (key,value) VALUES (?, ?)`, key, value).Exec(); err != nil {
+		return err
 	}
-	db.db[string(key)] = common.CopyBytes(value)
 	return nil
 }
 
@@ -119,10 +113,9 @@ func (db *Database) Delete(key []byte) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
-	if db.db == nil {
-		return errMemorydbClosed
+	if err := db.session.Query(`DELETE from FROM blockchain WHERE key = ?`, key).Exec(); err != nil {
+		return err
 	}
-	delete(db.db, string(key))
 	return nil
 }
 
@@ -145,7 +138,6 @@ func (db *Database) NewBatchWithSize(size int) ethdb.Batch {
 // of database content with a particular key prefix, starting at a particular
 // initial key (or after, if it does not exist).
 func (db *Database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
-	fmt.Println("prefix", string(prefix), "start", string(start))
 	db.lock.RLock()
 	defer db.lock.RUnlock()
 
@@ -264,17 +256,17 @@ func (b *batch) Reset() {
 
 // Replay replays the batch contents.
 func (b *batch) Replay(w ethdb.KeyValueWriter) error {
-	for _, keyvalue := range b.writes {
-		if keyvalue.delete {
-			if err := w.Delete(keyvalue.key); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := w.Put(keyvalue.key, keyvalue.value); err != nil {
-			return err
-		}
-	}
+	// for _, keyvalue := range b.writes {
+	// 	if keyvalue.delete {
+	// 		if err := w.Delete(keyvalue.key); err != nil {
+	// 			return err
+	// 		}
+	// 		continue
+	// 	}
+	// 	if err := w.Put(keyvalue.key, keyvalue.value); err != nil {
+	// 		return err
+	// 	}
+	// }
 	return nil
 }
 
@@ -335,55 +327,29 @@ func (it *iterator) Release() {
 // snapshot wraps a batch of key-value entries deep copied from the in-memory
 // database for implementing the Snapshot interface.
 type snapshot struct {
-	db   map[string][]byte
-	lock sync.RWMutex
+	db map[string][]byte
 }
 
 // newSnapshot initializes the snapshot with the given database instance.
 func newSnapshot(db *Database) *snapshot {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
-
 	copied := make(map[string][]byte)
-	for key, val := range db.db {
-		copied[key] = common.CopyBytes(val)
-	}
 	return &snapshot{db: copied}
 }
 
 // Has retrieves if a key is present in the snapshot backing by a key-value
 // data store.
 func (snap *snapshot) Has(key []byte) (bool, error) {
-	snap.lock.RLock()
-	defer snap.lock.RUnlock()
-
-	if snap.db == nil {
-		return false, errSnapshotReleased
-	}
-	_, ok := snap.db[string(key)]
-	return ok, nil
+	return false, nil
 }
 
 // Get retrieves the given key if it's present in the snapshot backing by
 // key-value data store.
 func (snap *snapshot) Get(key []byte) ([]byte, error) {
-	snap.lock.RLock()
-	defer snap.lock.RUnlock()
-
-	if snap.db == nil {
-		return nil, errSnapshotReleased
-	}
-	if entry, ok := snap.db[string(key)]; ok {
-		return common.CopyBytes(entry), nil
-	}
-	return nil, errMemorydbNotFound
+	return nil, nil
 }
 
 // Release releases associated resources. Release should always succeed and can
 // be called multiple times without causing error.
 func (snap *snapshot) Release() {
-	snap.lock.Lock()
-	defer snap.lock.Unlock()
 
-	snap.db = nil
 }
