@@ -1,0 +1,13 @@
+-- docker-compose up -d
+
+-- docker exec -it scylla-new-dc cqlsh
+-- docker exec -it scylla-new-dc nodetool status
+-- docker logs scylla-new-dc --tail 10 --follow
+
+CREATE KEYSPACE eth WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'DC1' : 1};
+use eth;
+
+create table eth.blockchain (
+  key blob,
+  value blob,
+  primary key(key));

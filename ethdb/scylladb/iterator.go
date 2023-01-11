@@ -2,8 +2,11 @@ package scylladb
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/gocql/gocql"
+	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 // iterator can walk over the (potentially partial) keyspace of a memory key
@@ -60,22 +63,52 @@ func (it *iterator) Release() {
 	it.index, it.keys, it.values = -1, nil, nil
 }
 
+// bytesPrefixRange returns key range that satisfy
+// - the given prefix, and
+// - the given seek position
+func bytesPrefixRange(prefix, start []byte) *util.Range {
+	r := util.BytesPrefix(prefix)
+	r.Start = append(r.Start, start...)
+	return r
+}
+
+// func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+// 	return db.db.NewIterator(bytesPrefixRange(prefix, start), nil)
+// }
+
 // NewIterator creates a binary-alphabetical iterator over a subset
 // of database content with a particular key prefix, starting at a particular
 // initial key (or after, if it does not exist).
 func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	fmt.Println("prefix", string(prefix), "start", string(start))
-	// db.lock.RLock()
-	// defer db.lock.RUnlock()
 
-	// var (
-	// 	pr     = string(prefix)
-	// 	st     = string(append(prefix, start...))
-	// 	keys   = make([]string, 0, len(db.db))
-	// 	values = make([][]byte, 0, len(db.db))
-	// )
-	// // Collect the keys from the memory database corresponding to the given prefix
-	// // and start
+	x := bytesPrefixRange(prefix, start)
+	fmt.Println(x.Limit, x.Start)
+	var key []byte
+	var keys []string
+	var value []byte
+	var values [][]byte
+
+	return &iterator{
+		index:  1000,
+		keys:   keys,
+		values: values,
+	}
+
+	// Collect the keys from the memory database corresponding to the given prefix
+	// and start
+
+	iter := db.session.Query(`SELECT key,value FROM blockchain`).Consistency(gocql.One).Iter()
+	for iter.Scan(&key, &value) {
+		keys = append(keys, string(key))
+		values = append(values, value)
+	}
+	if err := iter.Close(); err != nil {
+		log.Fatal(err)
+	}
+
+	// fmt.Printf("peers = %s\n", peers)
+
 	// for key := range db.db {
 	// 	if !strings.HasPrefix(key, pr) {
 	// 		continue
@@ -84,19 +117,15 @@ func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	// 		keys = append(keys, key)
 	// 	}
 	// }
+
 	// // Sort the items and retrieve the associated values
 	// sort.Strings(keys)
 	// for _, key := range keys {
 	// 	values = append(values, db.db[key])
 	// }
-	// return &iterator{
-	// 	index:  -1,
-	// 	keys:   keys,
-	// 	values: values,
-	// }
 	return &iterator{
 		index:  -1,
-		keys:   []string{},
-		values: [][]byte{},
+		keys:   keys,
+		values: values,
 	}
 }
