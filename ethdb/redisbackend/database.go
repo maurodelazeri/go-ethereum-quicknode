@@ -61,6 +61,7 @@ func NewDatabase(ctx context.Context, r Redis) ethdb.Database {
 
 // NewClientDatabase creates a redis-ethdb using a Client
 func NewClientDatabase(ctx context.Context, cl *redis.Client) ethdb.Database {
+	fmt.Println("AAAAAA BORA")
 	return &Database{
 		ctx:   ctx,
 		redis: cl,
