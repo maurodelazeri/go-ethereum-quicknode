@@ -82,8 +82,6 @@ func bytesPrefixRange(prefix, start []byte) *util.Range {
 func (db *database) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	fmt.Println("prefix", string(prefix), "start", string(start))
 
-	x := bytesPrefixRange(prefix, start)
-	fmt.Println(x.Limit, x.Start)
 	var key []byte
 	var keys []string
 	var value []byte

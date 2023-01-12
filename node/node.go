@@ -17,6 +17,7 @@
 package node
 
 import (
+	"context"
 	crand "crypto/rand"
 	"errors"
 	"fmt"
@@ -33,11 +34,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/scylladb"
+	"github.com/ethereum/go-ethereum/ethdb/redisethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/tsdb/fileutil"
 )
 
@@ -706,8 +708,15 @@ func (n *Node) OpenDatabase(name string, cache, handles int, namespace string, r
 		// db := rawdb.NewMemoryDatabase()
 		// return db, nil
 
-		db, err := scylladb.NewDatabase()
-		return db, err
+		// db, err := scylladb.NewDatabase()
+		// return db, err
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
+		db := redisethdb.NewClientDatabase(context.Background(), rdb)
+		return db, nil
 	}
 
 	n.lock.Lock()
