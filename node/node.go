@@ -34,7 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/redisethdb"
+	"github.com/ethereum/go-ethereum/ethdb/redisbackend"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -715,7 +715,7 @@ func (n *Node) OpenDatabase(name string, cache, handles int, namespace string, r
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		})
-		db := redisethdb.NewClientDatabase(context.Background(), rdb)
+		db := redisbackend.NewClientDatabase(context.Background(), rdb)
 		return db, nil
 	}
 
